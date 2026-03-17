@@ -1,0 +1,29 @@
+{
+  "name": "react-router-worker-example",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build:deps": "pnpm --dir ../.. build:wasm && pnpm --dir ../../packages/lightning-cloudflare build",
+    "build": "pnpm build:deps && vite build",
+    "dev": "pnpm build:deps && concurrently -k -n assets,worker -c cyan,green \"vite build --watch --emptyOutDir\" \"wrangler dev\"",
+    "deploy": "pnpm build && wrangler deploy",
+    "typecheck": "pnpm build:deps && tsc --noEmit"
+  },
+  "dependencies": {
+    "@moneydevkit/core": "0.14.0",
+    "mdk-cloudflare": "workspace:*",
+    "react": "^19.2.4",
+    "react-dom": "^19.2.4",
+    "react-router-dom": "^7.13.1"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.0.0",
+    "@types/react": "^19.2.2",
+    "@types/react-dom": "^19.2.2",
+    "@vitejs/plugin-react": "^6.0.1",
+    "concurrently": "^9.2.1",
+    "typescript": "^5.9.3",
+    "vite": "^8.0.0",
+    "wrangler": "^4.73.0"
+  }
+}

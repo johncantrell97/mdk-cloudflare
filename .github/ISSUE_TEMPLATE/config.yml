@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Security Vulnerability
+    url: https://github.com/johncantrell97/mdk-cloudflare/security/policy
+    about: Report security issues privately instead of opening a public issue.
+  - name: Integration Docs
+    url: https://github.com/johncantrell97/mdk-cloudflare/blob/main/README.md
+    about: Start here for setup, examples, and public integration guidance.

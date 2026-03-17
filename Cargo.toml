@@ -1,0 +1,15 @@
+[workspace]
+members = ["crates/ldk-wasm"]
+resolver = "2"
+
+[workspace.package]
+authors = ["John Cantrell <johncantrell97@gmail.com>"]
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/johncantrell97/mdk-cloudflare"
+
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
+strip = true
+panic = "abort"

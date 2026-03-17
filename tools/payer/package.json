@@ -1,0 +1,12 @@
+{
+  "name": "ldk-cf-payer",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "payer": "node payer.js"
+  },
+  "dependencies": {
+    "@moneydevkit/lightning-js": "^0.1.79"
+  }
+}

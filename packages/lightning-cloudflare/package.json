@@ -1,0 +1,66 @@
+{
+  "name": "mdk-cloudflare",
+  "version": "0.1.3",
+  "description": "Cloudflare Workers-only Lightning payments via LDK compiled to WASM",
+  "author": "John Cantrell <johncantrell97@gmail.com>",
+  "license": "MIT OR Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/johncantrell97/mdk-cloudflare.git",
+    "directory": "packages/lightning-cloudflare"
+  },
+  "homepage": "https://github.com/johncantrell97/mdk-cloudflare",
+  "bugs": {
+    "url": "https://github.com/johncantrell97/mdk-cloudflare/issues"
+  },
+  "keywords": [
+    "lightning",
+    "bitcoin",
+    "ldk",
+    "cloudflare",
+    "workers",
+    "durable-objects",
+    "wasm",
+    "payments",
+    "lightning-network"
+  ],
+  "type": "module",
+  "main": "dist/entry.js",
+  "types": "dist/entry.d.ts",
+  "bundleDependencies": [
+    "ldk-wasm"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/entry.d.ts",
+      "default": "./dist/entry.js"
+    },
+    "./types": {
+      "types": "./dist/types.d.ts",
+      "default": "./dist/types.js"
+    }
+  },
+  "files": [
+    "dist/",
+    "README.md",
+    "LICENSE-MIT",
+    "LICENSE-APACHE"
+  ],
+  "scripts": {
+    "build": "pnpm clean && tsc",
+    "clean": "rm -rf dist",
+    "docs": "typedoc src/entry.ts --out docs --disableSources",
+    "prepack": "pnpm --dir ../.. build && node ../../scripts/prepare-release-package.mjs prepack",
+    "postpack": "node ../../scripts/prepare-release-package.mjs postpack",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "ldk-wasm": "workspace:0.1.3"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.0.0",
+    "typedoc": "^0.28.17",
+    "typescript": "^5.8.0",
+    "vitest": "^4.1.0"
+  }
+}

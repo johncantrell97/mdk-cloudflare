@@ -1,0 +1,27 @@
+{
+  "name": "mdk-cloudflare-monorepo",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Cloudflare Workers-only Lightning payments via LDK compiled to WASM",
+  "author": "John Cantrell <johncantrell97@gmail.com>",
+  "license": "MIT OR Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/johncantrell97/mdk-cloudflare.git"
+  },
+  "type": "module",
+  "scripts": {
+    "build:wasm": "wasm-pack build crates/ldk-wasm --target web --out-dir ../../packages/ldk-wasm && node scripts/prepare-wasm-package.mjs packages/ldk-wasm && bash scripts/patch-wasm-bindgen.sh packages/ldk-wasm && bash scripts/verify-wasm-patch.sh packages/ldk-wasm",
+    "build:packages": "pnpm -r --filter './packages/**' --if-present build",
+    "build": "pnpm build:wasm && pnpm build:packages",
+    "check": "cargo check --manifest-path crates/ldk-wasm/Cargo.toml",
+    "test:wasm": "wasm-pack test --node crates/ldk-wasm",
+    "test:ts": "pnpm -r --filter './packages/**' --if-present test",
+    "pack:check": "node scripts/verify-package.mjs",
+    "smoke:install": "node scripts/smoke-test-install.mjs"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.0.0",
+    "typescript": "^5.8.0"
+  }
+}

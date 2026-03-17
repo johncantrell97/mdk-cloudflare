@@ -1,0 +1,82 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  rust:
+    name: Rust
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Install wasm-pack
+        run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
+
+      - name: Check
+        run: cargo check
+
+      - name: Test
+        run: wasm-pack test --node crates/ldk-wasm
+
+      - name: Format
+        run: cargo fmt -- --check
+
+  typescript:
+    name: TypeScript
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install
+
+      - name: Build WASM
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: Install wasm-pack
+        run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
+
+      - name: Build
+        run: pnpm build
+
+      - name: Test
+        run: pnpm test:ts
+
+      - name: Verify package tarball
+        run: pnpm pack:check
+
+      - name: Smoke test packaged installs
+        run: pnpm smoke:install
+
+      - name: Typecheck basic worker example
+        run: pnpm --dir examples/basic-worker typecheck
+
+      - name: Build React + Vite example
+        run: pnpm --dir examples/react-vite-worker build
+
+      - name: Build React Router example
+        run: pnpm --dir examples/react-router-worker build
+
+      - name: Check repo docs files
+        run: test -f README.md && test -f ARCHITECTURE.md && test -f CHECKOUT_PAGE_SETUP.md && test -f llms.txt

@@ -1,0 +1,201 @@
+# mdk-cloudflare — LLM Integration Guide
+
+Use this file when integrating `mdk-cloudflare`
+into an existing Cloudflare Worker, Vite React app, or React Router app.
+
+Do not assume a fixed framework layout. Inspect the consumer repo first and adapt to it.
+Prefer modifying the user's existing Worker and React app structure over introducing a new scaffold.
+
+## Packages
+
+Backend:
+
+```bash
+npm install mdk-cloudflare
+```
+
+Official React checkout UI:
+
+```bash
+npm install mdk-cloudflare @moneydevkit/core react react-dom
+```
+
+Current public support: `mainnet` only.
+
+## Backend Integration Checklist
+
+### 1. wrangler.toml
+
+Ensure the Worker has:
+
+```toml
+compatibility_flags = ["nodejs_compat"]
+
+[[durable_objects.bindings]]
+name = "LIGHTNING_NODE"
+class_name = "LightningNode"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["LightningNode"]
+```
+
+Critical: use `new_sqlite_classes`, not `new_classes`.
+
+If the app serves a frontend bundle from the Worker, also ensure the `assets` block
+matches the app's actual static asset setup.
+
+### 2. Worker entry
+
+The Worker entry must re-export `LightningNode` and route `/api/mdk` through
+`createUnifiedHandler()`:
+
+```ts
+import { LightningNode, createUnifiedHandler } from 'mdk-cloudflare'
+
+export { LightningNode }
+
+interface Env {
+  LIGHTNING_NODE: DurableObjectNamespace<LightningNode>
+  MDK_ACCESS_TOKEN: string
+}
+
+export default {
+  async fetch(request: Request, env: Env): Promise<Response> {
+    const url = new URL(request.url)
+    const node = env.LIGHTNING_NODE.get(env.LIGHTNING_NODE.idFromName('default'))
+
+    if (url.pathname === '/api/mdk') {
+      return createUnifiedHandler({
+        node,
+        accessToken: env.MDK_ACCESS_TOKEN,
+      })(request)
+    }
+
+    return new Response('Not found', { status: 404 })
+  },
+}
+```
+
+Use a single DO instance name like `'default'`.
+
+### 3. Secrets
+
+Use Worker secrets or `.dev.vars`:
+
+```bash
+wrangler secret put MNEMONIC
+wrangler secret put MDK_ACCESS_TOKEN
+```
+
+Required:
+- `MNEMONIC`
+- `MDK_ACCESS_TOKEN`
+
+Optional:
+- `NETWORK=mainnet`
+
+Important: the built-in `/api/mdk` route uses `MDK_ACCESS_TOKEN` for secret-authenticated MDK server traffic. MoneyDevKit Standard Webhooks are a separate integration and should use a separate endpoint and signing secret.
+
+### 4. MDK app configuration
+
+MoneyDevKit should point at the app's public base origin, not `/api/mdk`.
+
+Examples:
+- `https://example.com`
+- `https://abc123.ngrok-free.app`
+
+## Checkout Page React Integration
+
+There are two intended frontend shapes.
+
+### Plain React / Vite SPA
+
+Use your own app shell for `/` and `/success`, and mount the official MDK `Checkout` component on `/checkout/:id`:
+
+```tsx
+import '@moneydevkit/core/mdk-styles.css'
+import { Checkout, useCheckout, useProducts } from '@moneydevkit/core/client'
+```
+
+Use `useCheckout()` to create checkouts, and pass `checkoutPath: '/checkout'` so the returned URL matches your route.
+
+### React Router app
+
+Mount `Checkout` inside your existing router:
+
+```tsx
+import '@moneydevkit/core/mdk-styles.css'
+import { Checkout } from '@moneydevkit/core/client'
+import { Route, Routes, useParams } from 'react-router-dom'
+
+function CheckoutRoute() {
+  const { checkoutId } = useParams()
+  return checkoutId ? <Checkout id={checkoutId} /> : null
+}
+
+export function App() {
+  return (
+    <Routes>
+      <Route path="/checkout/:checkoutId" element={<CheckoutRoute />} />
+    </Routes>
+  )
+}
+```
+
+## What To Inspect In The Consumer Repo
+
+Before editing:
+
+1. Find the actual Worker entry file and `wrangler.toml`.
+2. Check whether the app already uses Vite, React Router, or another routing layer.
+3. Find the frontend entry file, usually `src/main.tsx` or similar.
+4. Check whether the Worker already serves static assets.
+5. Preserve the user's existing app structure and route ownership.
+
+## Prefer These References
+
+Use the closest example in this repo as the integration template:
+
+- `examples/basic-worker/`
+- `examples/react-vite-worker/`
+- `examples/react-router-worker/`
+
+Also use:
+
+- `ARCHITECTURE.md`
+- `CHECKOUT_PAGE_SETUP.md`
+- `packages/lightning-cloudflare/README.md`
+
+## Common Pitfalls
+
+1. Forgetting to re-export `LightningNode`.
+2. Using `new_classes` instead of `new_sqlite_classes`.
+3. Pointing MDK at `/api/mdk` instead of the app origin.
+4. Mounting the React checkout UI without importing `@moneydevkit/core/mdk-styles.css`.
+5. Using multiple Durable Object instance names instead of a single fixed name.
+6. Forgetting that local webhook/payment completion requires a public tunnel.
+
+## Backend API Surface
+
+Key Worker-side methods:
+
+- `node.createCheckout(...)`
+- `node.getCheckout(id)`
+- `node.confirmCheckout(...)`
+- `node.listProducts()`
+- `node.getCustomer(...)`
+- `node.pay(bolt11)`
+- `node.getNodeId()`
+- `node.getNodeInfo()`
+- `node.debug()`
+
+Key top-level utilities:
+
+- `createUnifiedHandler`
+- `createCheckoutUrl`
+- `resolveDestinationToInvoice`
+- `parseBolt11AmountMsat`
+- `setLogLevel`
+- `NodeChannel` — `{ channelId, counterpartyNodeId, inboundCapacityMsat, outboundCapacityMsat, isUsable, ... }`
+- `ReceivedPayment` — `{ paymentHash, amount }`
