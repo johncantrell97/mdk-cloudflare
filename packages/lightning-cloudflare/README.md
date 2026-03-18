@@ -6,6 +6,7 @@ Lightning payments for Cloudflare Workers via a SQLite-backed Durable Object.
 
 - `LightningNode`, a Durable Object class that runs LDK compiled to WASM
 - Worker-safe checkout, payment, and node APIs
+- `mppCharge()`, an [MPP](https://mpp.dev)-compatible helper for pay-per-request endpoints with Lightning
 - `createUnifiedHandler()`, an upstream-style `/api/mdk` route for MoneyDevKit checkout flows
 
 Documentation:
@@ -133,6 +134,7 @@ Utilities are also exported:
 
 ```ts
 import {
+  mppCharge,
   createCheckoutUrl,
   createUnifiedHandler,
   resolveDestinationToInvoice,
@@ -140,6 +142,52 @@ import {
   setLogLevel,
 } from 'mdk-cloudflare'
 ```
+
+## MPP (Machine Payments Protocol)
+
+`mppCharge()` lets you create HTTP 402-protected endpoints that require Lightning payment before your handler runs. It implements the [Machine Payments Protocol](https://mpp.dev) `charge` intent with the `lightning` payment method.
+
+```ts
+import { LightningNode, mppCharge } from 'mdk-cloudflare'
+
+export { LightningNode }
+
+interface Env {
+  LIGHTNING_NODE: DurableObjectNamespace<LightningNode>
+}
+
+export default {
+  async fetch(request: Request, env: Env): Promise<Response> {
+    const node = env.LIGHTNING_NODE.get(env.LIGHTNING_NODE.idFromName('default'))
+
+    return mppCharge(request, node, { amount: 100 }, async () => {
+      return Response.json({ data: 'premium content' })
+    })
+  },
+}
+```
+
+**How it works:**
+
+1. Client requests a protected endpoint — gets HTTP 402 with a Lightning invoice in the `WWW-Authenticate` header
+2. Client pays the invoice with any Lightning wallet — receives a payment preimage
+3. Client retries the request with `Authorization: Payment` header containing the preimage
+4. Server verifies `SHA256(preimage) === paymentHash`, runs the handler, returns the response with a `Payment-Receipt`
+
+Each payment is single-use — the challenge is deleted after successful verification, preventing replay.
+
+**Dynamic pricing** — set `amount` to a function of the request:
+
+```ts
+mppCharge(request, node, {
+  amount: async (req) => {
+    const { sizeMb } = await req.json()
+    return sizeMb * 50 // 50 sats per MB
+  }
+}, handler)
+```
+
+Compatible with MPP clients like [`mppx`](https://www.npmjs.com/package/mppx).
 
 ## Pairing With React Checkout
 
@@ -167,3 +215,4 @@ The React examples in this repo show how to pair that UI with a Cloudflare Worke
 - Basic Worker: https://github.com/johncantrell97/mdk-cloudflare/tree/main/examples/basic-worker
 - React + Vite checkout pages: https://github.com/johncantrell97/mdk-cloudflare/tree/main/examples/react-vite-worker
 - React Router checkout pages: https://github.com/johncantrell97/mdk-cloudflare/tree/main/examples/react-router-worker
+- MPP pay-per-request: https://github.com/johncantrell97/mdk-cloudflare/tree/main/examples/mpp-worker

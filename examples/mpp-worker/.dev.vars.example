@@ -1,0 +1,4 @@
+# Copy this file to .dev.vars for local `wrangler dev`.
+
+MNEMONIC="replace-with-your-moneydevkit-mnemonic"
+MDK_ACCESS_TOKEN="replace-with-your-moneydevkit-api-key"

@@ -46,6 +46,10 @@ export type {
   UnifiedRouteOptions,
 } from './route.js'
 
+// MPP (Machine Payments Protocol) helper
+export { mppCharge } from './mpp.js'
+export type { MppChargeOptions, MppChargeNode, MppChallenge, MppVerification } from './mpp.js'
+
 // Types
 export { PaymentEventType } from './types.js'
 export type {

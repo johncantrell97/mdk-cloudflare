@@ -403,4 +403,199 @@ describe('LightningNode', () => {
       channels: [],
     })
   })
+
+  describe('createMppChallenge', () => {
+    it('creates a checkout, stores challenge, and returns challenge data', async () => {
+      const { node, storage } = createObject()
+
+      const checkout = {
+        id: 'checkout_mpp_1',
+        status: 'PENDING_PAYMENT',
+        invoice: {
+          invoice: 'lnbc100test...',
+          paymentHash: 'aa'.repeat(32),
+        },
+        paymentHash: 'aa'.repeat(32),
+      }
+      clientCreateCheckout.mockResolvedValueOnce({ id: 'checkout_mpp_1', status: 'CONFIRMED', invoiceAmountSats: 100 })
+      clientRegisterInvoice.mockResolvedValueOnce(checkout)
+      nodeGetInvoice.mockResolvedValueOnce({
+        bolt11: 'lnbc100test...',
+        paymentHash: 'aa'.repeat(32),
+        expiresAt: Math.floor(Date.now() / 1000) + 900,
+        scid: '123x456x0',
+      })
+
+      const result = await node.createMppChallenge(100)
+
+      expect(result.challengeId).toBeDefined()
+      expect(result.invoice).toBe('lnbc100test...')
+      expect(result.paymentHash).toBe('aa'.repeat(32))
+      expect(result.amountSats).toBe(100)
+      expect(result.expiresAt).toBeGreaterThan(Math.floor(Date.now() / 1000))
+
+      // Verify challenge stored
+      expect(storage.put).toHaveBeenCalledWith(
+        expect.objectContaining({
+          [`mpp/${result.challengeId}`]: expect.objectContaining({
+            paymentHash: 'aa'.repeat(32),
+            checkoutId: 'checkout_mpp_1',
+          }),
+        }),
+      )
+    })
+
+    it('throws when checkout has no invoice', async () => {
+      const { node } = createObject()
+
+      clientCreateCheckout.mockResolvedValueOnce({ id: 'checkout_2', status: 'UNCONFIRMED' })
+
+      await expect(node.createMppChallenge(100)).rejects.toThrow()
+    })
+  })
+
+  describe('verifyMppCredential', () => {
+    // Helper: SHA256 a hex preimage to get paymentHash
+    async function sha256hex(hexPreimage: string): Promise<string> {
+      const bytes = new Uint8Array(hexPreimage.match(/.{2}/g)!.map((b) => parseInt(b, 16)))
+      const hash = await crypto.subtle.digest('SHA-256', bytes)
+      return Array.from(new Uint8Array(hash)).map((b) => b.toString(16).padStart(2, '0')).join('')
+    }
+
+    it('returns valid:true and deletes challenge when preimage matches', async () => {
+      const preimage = 'ab'.repeat(32)
+      const paymentHash = await sha256hex(preimage)
+
+      const { node, storage } = createObject()
+      storage.get.mockResolvedValueOnce({
+        paymentHash,
+        checkoutId: 'checkout_1',
+        expiresAt: Math.floor(Date.now() / 1000) + 900,
+      })
+
+      const result = await node.verifyMppCredential('challenge-1', preimage)
+
+      expect(result).toEqual({ valid: true, paymentHash })
+      expect(storage.delete).toHaveBeenCalledWith('mpp/challenge-1')
+    })
+
+    it('returns valid:false when challenge not found', async () => {
+      const { node, storage } = createObject()
+      storage.get.mockResolvedValueOnce(undefined)
+
+      const result = await node.verifyMppCredential('nonexistent', 'aa'.repeat(32))
+
+      expect(result).toEqual({ valid: false })
+    })
+
+    it('returns valid:false and deletes when challenge expired', async () => {
+      const { node, storage } = createObject()
+      storage.get.mockResolvedValueOnce({
+        paymentHash: 'aa'.repeat(32),
+        checkoutId: 'checkout_1',
+        expiresAt: Math.floor(Date.now() / 1000) - 10, // expired
+      })
+
+      const result = await node.verifyMppCredential('expired-challenge', 'aa'.repeat(32))
+
+      expect(result).toEqual({ valid: false })
+      expect(storage.delete).toHaveBeenCalledWith('mpp/expired-challenge')
+    })
+
+    it('returns valid:false when preimage does not match', async () => {
+      const { node, storage } = createObject()
+      storage.get.mockResolvedValueOnce({
+        paymentHash: 'ff'.repeat(32), // won't match any preimage we provide
+        checkoutId: 'checkout_1',
+        expiresAt: Math.floor(Date.now() / 1000) + 900,
+      })
+
+      const result = await node.verifyMppCredential('challenge-1', 'ab'.repeat(32))
+
+      expect(result).toEqual({ valid: false })
+      // Challenge NOT deleted on mismatch (only on match or expiry)
+    })
+
+    it('prevents replay: second verification of same challenge fails', async () => {
+      const preimage = 'ab'.repeat(32)
+      const paymentHash = await sha256hex(preimage)
+
+      const { node, storage } = createObject()
+      // First call: challenge exists
+      storage.get.mockResolvedValueOnce({
+        paymentHash,
+        checkoutId: 'checkout_1',
+        expiresAt: Math.floor(Date.now() / 1000) + 900,
+      })
+
+      const first = await node.verifyMppCredential('challenge-replay', preimage)
+      expect(first).toEqual({ valid: true, paymentHash })
+
+      // Second call: challenge was deleted, storage returns undefined
+      storage.get.mockResolvedValueOnce(undefined)
+
+      const second = await node.verifyMppCredential('challenge-replay', preimage)
+      expect(second).toEqual({ valid: false })
+    })
+
+    it('returns valid:false for malformed preimage (wrong length)', async () => {
+      const { node, storage } = createObject()
+      storage.get.mockResolvedValueOnce({
+        paymentHash: 'aa'.repeat(32),
+        checkoutId: 'checkout_1',
+        expiresAt: Math.floor(Date.now() / 1000) + 900,
+      })
+
+      const result = await node.verifyMppCredential('challenge-1', 'abc') // odd length, not 32 bytes
+      expect(result).toEqual({ valid: false })
+    })
+
+    it('returns valid:false for empty preimage', async () => {
+      const { node, storage } = createObject()
+      storage.get.mockResolvedValueOnce({
+        paymentHash: 'aa'.repeat(32),
+        checkoutId: 'checkout_1',
+        expiresAt: Math.floor(Date.now() / 1000) + 900,
+      })
+
+      const result = await node.verifyMppCredential('challenge-1', '')
+      expect(result).toEqual({ valid: false })
+    })
+  })
+
+  describe('alarm - MPP cleanup', () => {
+    it('deletes expired MPP challenges during alarm', async () => {
+      const { node, storage } = createObject()
+      const now = Math.floor(Date.now() / 1000)
+
+      const mppEntries = new Map([
+        ['mpp/expired-1', { paymentHash: 'aa'.repeat(32), checkoutId: 'c1', expiresAt: now - 100 }],
+        ['mpp/valid-1', { paymentHash: 'bb'.repeat(32), checkoutId: 'c2', expiresAt: now + 900 }],
+        ['mpp/expired-2', { paymentHash: 'cc'.repeat(32), checkoutId: 'c3', expiresAt: now - 50 }],
+      ])
+      storage.list.mockResolvedValue(mppEntries)
+      nodePeriodicMaintenance.mockResolvedValue(undefined)
+
+      await node.alarm()
+
+      // Should batch-delete only expired keys
+      expect(storage.delete).toHaveBeenCalledWith(['mpp/expired-1', 'mpp/expired-2'])
+    })
+
+    it('skips delete when no expired challenges exist', async () => {
+      const { node, storage } = createObject()
+      const now = Math.floor(Date.now() / 1000)
+
+      const mppEntries = new Map([
+        ['mpp/valid-1', { paymentHash: 'aa'.repeat(32), checkoutId: 'c1', expiresAt: now + 900 }],
+      ])
+      storage.list.mockResolvedValue(mppEntries)
+      nodePeriodicMaintenance.mockResolvedValue(undefined)
+
+      await node.alarm()
+
+      // delete should not be called with mpp keys
+      expect(storage.delete).not.toHaveBeenCalledWith(expect.arrayContaining([expect.stringContaining('mpp/')]))
+    })
+  })
 })

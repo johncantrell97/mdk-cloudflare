@@ -1,6 +1,6 @@
 {
   "name": "mdk-cloudflare",
-  "version": "0.1.3",
+  "version": "0.1.5",
   "description": "Cloudflare Workers-only Lightning payments via LDK compiled to WASM",
   "author": "John Cantrell <johncantrell97@gmail.com>",
   "license": "MIT OR Apache-2.0",
@@ -55,7 +55,7 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "ldk-wasm": "workspace:0.1.3"
+    "ldk-wasm": "workspace:0.1.5"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.0.0",

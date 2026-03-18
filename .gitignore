@@ -27,6 +27,9 @@ Thumbs.db
 *.swo
 .tmp/
 
+# Internal planning docs
+docs/superpowers/
+
 # Tools
 tools/payer/.payer-state.json
 tools/payer/node_modules/

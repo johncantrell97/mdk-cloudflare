@@ -7,6 +7,7 @@ import { MdkNode, deriveNodeId } from './node.js'
 import { MoneyDevKitClient } from './client.js'
 import { resolveDestinationToInvoice } from './lnurl.js'
 import { MAINNET_MDK_NODE_OPTIONS } from './config.js'
+import type { MppChallenge, MppVerification } from './mpp.js'
 import type {
   Checkout,
   ConfirmCheckoutOptions,
@@ -122,6 +123,22 @@ export class LightningNode extends DurableObjectBase {
       } catch (e) {
         log.warn(`[alarm] Periodic maintenance failed (non-fatal): ${e}`)
       }
+
+      // 3. Clean up expired MPP challenges
+      try {
+        const mppEntries = await this.ctx.storage.list<{ expiresAt: number }>({ prefix: 'mpp/' })
+        const now = Math.floor(Date.now() / 1000)
+        const expiredKeys: string[] = []
+        for (const [key, value] of mppEntries) {
+          if (value.expiresAt < now) expiredKeys.push(key)
+        }
+        if (expiredKeys.length > 0) {
+          await this.ctx.storage.delete(expiredKeys)
+          log.debug(`[alarm] Cleaned up ${expiredKeys.length} expired MPP challenges`)
+        }
+      } catch (e) {
+        log.warn(`[alarm] MPP cleanup failed (non-fatal): ${e}`)
+      }
     } finally {
       // Always reschedule — even if everything above fails
       await this.ctx.storage.setAlarm(Date.now() + 10 * 60 * 1000)
@@ -209,6 +226,55 @@ export class LightningNode extends DurableObjectBase {
   async getCheckout(id: string): Promise<Checkout> {
     const client = this.createClient()
     return client.checkouts.get({ id })
+  }
+
+  private static readonly MPP_CHALLENGE_TTL_SECS = 15 * 60
+
+  async createMppChallenge(amountSats: number): Promise<MppChallenge> {
+    const checkout = await this.createCheckout({ amount: amountSats, currency: 'SAT' })
+
+    const paymentHash = checkout.invoice?.paymentHash ?? checkout.paymentHash
+    const invoice = checkout.invoice?.invoice
+
+    if (!paymentHash || !invoice) {
+      throw new Error('Checkout missing invoice or paymentHash — MDK may not have confirmed the checkout')
+    }
+
+    const challengeId = crypto.randomUUID()
+    const expiresAt = Math.floor(Date.now() / 1000) + LightningNode.MPP_CHALLENGE_TTL_SECS
+
+    await this.ctx.storage.put({
+      [`mpp/${challengeId}`]: { paymentHash, checkoutId: checkout.id, expiresAt },
+    })
+
+    return { challengeId, invoice, paymentHash, amountSats, expiresAt }
+  }
+
+  async verifyMppCredential(challengeId: string, preimage: string): Promise<MppVerification> {
+    const key = `mpp/${challengeId}`
+    const stored = await this.ctx.storage.get<{ paymentHash: string; checkoutId: string; expiresAt: number }>(key)
+
+    if (!stored) return { valid: false }
+
+    if (stored.expiresAt < Math.floor(Date.now() / 1000)) {
+      await this.ctx.storage.delete(key)
+      return { valid: false }
+    }
+
+    if (!/^[0-9a-f]{64}$/i.test(preimage)) return { valid: false }
+
+    const preimageBytes = new Uint8Array(preimage.match(/.{2}/g)!.map((b) => parseInt(b, 16)))
+    const hashBuffer = await crypto.subtle.digest('SHA-256', preimageBytes)
+    const computedHash = Array.from(new Uint8Array(hashBuffer))
+      .map((b) => b.toString(16).padStart(2, '0'))
+      .join('')
+
+    if (!timingSafeEqual(computedHash, stored.paymentHash)) {
+      return { valid: false }
+    }
+
+    await this.ctx.storage.delete(key)
+    return { valid: true, paymentHash: stored.paymentHash }
   }
 
   /** Lists products available to the configured MDK account. */

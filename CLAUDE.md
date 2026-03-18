@@ -51,6 +51,8 @@ The `LightningNode` DO class provides:
 - `pay(bolt11)` — Send outbound BOLT11 payment
 - `getNodeId()` — Derive node public key
 - `getNodeInfo()` — Balance and channel info
+- `createMppChallenge(amountSats)` — Create checkout + invoice, store challenge for MPP 402 flow
+- `verifyMppCredential(challengeId, preimage)` — Verify preimage against stored challenge, delete on success
 - `fetch(request)` — HTTP handler for MDK webhook callbacks
 
 ### Key Design Patterns
@@ -109,6 +111,7 @@ Single package `mdk-cloudflare` containing:
 - `log.ts` — Leveled logger (`setLogLevel` exported for consumers)
 - `lnurl.ts` — LNURL resolution utilities (exported)
 - `types.ts` — All TypeScript types
+- `mpp.ts` — MPP (Machine Payments Protocol) helper: `mppCharge()` for 402-protected endpoints (public)
 - `bindings.ts` — CF Workers fetch/connect bindings
 - `index.ts` — Internal barrel for cross-module imports
 
